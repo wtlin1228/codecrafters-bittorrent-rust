@@ -6,17 +6,23 @@ use std::env;
 
 #[allow(dead_code)]
 fn decode_bencoded_value(encoded_value: &str) -> serde_json::Value {
-    // If encoded_value starts with a digit, it's a number
-    if encoded_value.chars().next().unwrap().is_digit(10) {
-        // Example: "5:hello" -> "hello"
-        let colon_index = encoded_value.find(':').unwrap();
-        let number_string = &encoded_value[..colon_index];
-        let number = number_string.parse::<i64>().unwrap();
-        let string = &encoded_value[colon_index + 1..colon_index + 1 + number as usize];
-        return serde_json::Value::String(string.to_string());
-    } else {
-        panic!("Unhandled encoded value: {}", encoded_value)
-    }
+    let (start, end) = match encoded_value.chars().next() {
+        // string is encoded as <number>:<string>
+        Some(c) if c.is_digit(10) => {
+            let colon_index = encoded_value.find(':').unwrap();
+            let number_string = &encoded_value[..colon_index];
+            let number = number_string.parse::<i64>().unwrap();
+            (colon_index + 1, colon_index + 1 + number as usize)
+        }
+        // integer is encoded as i<number>e
+        Some(c) if c == 'i' => {
+            let end_index = encoded_value.find('e').unwrap();
+            (1, end_index)
+        }
+        _ => panic!("Unhandled encoded value: {}", encoded_value),
+    };
+    let string = &encoded_value[start..end];
+    serde_json::Value::String(string.to_string())
 }
 
 // Usage: your_bittorrent.sh decode "<encoded_value>"
