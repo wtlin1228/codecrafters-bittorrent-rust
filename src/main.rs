@@ -1,5 +1,6 @@
 use bittorrent_starter_rust::decode_bencoded_value;
 use std::env;
+use std::fs;
 
 // Available if you need it!
 // use serde_bencode
@@ -10,13 +11,21 @@ fn main() {
     let command = &args[1];
 
     if command == "decode" {
-        // You can use print statements as follows for debugging, they'll be visible when running tests.
-        // println!("Logs from your program will appear here!");
-
-        // Uncomment this block to pass the first stage
         let encoded_value = &args[2];
-        let decoded_value = decode_bencoded_value(encoded_value);
+        let decoded_value = decode_bencoded_value(encoded_value.as_bytes());
         println!("{}", decoded_value.to_string());
+    } else if command == "info" {
+        let file_path = &args[2];
+        let contents = fs::read(file_path).expect("Should have been able to read the file");
+        let decoded_value = decode_bencoded_value(&contents[..]);
+        println!(
+            "Tracker URL: {}",
+            decoded_value.get("announce").unwrap().as_str().unwrap()
+        );
+        println!(
+            "Length: {}",
+            decoded_value.get("info").unwrap().get("length").unwrap()
+        );
     } else {
         println!("unknown command: {}", args[1])
     }
