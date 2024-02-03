@@ -3,24 +3,41 @@ use bittorrent_starter_rust::{
     decoder::decode_bencoded_value, torrent_file::parse_torrent_file, tracker::track,
 };
 use bytes::{BufMut, BytesMut};
+use clap::{Parser, Subcommand};
+use std::fs;
 use std::io::{Read, Write};
-use std::net::TcpStream;
-use std::{env, fs};
+use std::net::{SocketAddr, TcpStream};
+use std::path::PathBuf;
+
+#[derive(Parser, Debug)]
+struct Args {
+    #[command(subcommand)]
+    command: Command,
+}
+#[derive(Debug, Subcommand)]
+enum Command {
+    Decode {
+        encoded_value: String,
+    },
+    Info {
+        file_path: PathBuf,
+    },
+    Peers {
+        file_path: PathBuf,
+    },
+    Handshake {
+        file_path: PathBuf,
+        peer: SocketAddr,
+    },
+}
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let command = &args[1][..];
-
-    match command {
-        // Usage: your_bittorrent.sh decode "<encoded_value>"
-        "decode" => {
-            let encoded_value = &args[2];
+    match Args::parse().command {
+        Command::Decode { encoded_value } => {
             let decoded_value = decode_bencoded_value(encoded_value.as_bytes()).unwrap();
             println!("{}", decoded_value.to_string());
         }
-        // Usage: your_bittorrent.sh info "<torrent_file_path>"
-        "info" => {
-            let file_path = &args[2];
+        Command::Info { file_path } => {
             let contents = fs::read(file_path).unwrap();
             let torrent_file = parse_torrent_file(&contents[..]).unwrap();
             println!("Tracker URL: {}", torrent_file.announce);
@@ -32,9 +49,7 @@ fn main() {
                 println!("{}", s);
             }
         }
-        // Usage: your_bittorrent.sh peers "<torrent_file_path>"
-        "peers" => {
-            let file_path = &args[2];
+        Command::Peers { file_path } => {
             let contents = fs::read(file_path).unwrap();
             let torrent_file = parse_torrent_file(&contents[..]).unwrap();
             let track_result = track(torrent_file).unwrap();
@@ -42,10 +57,7 @@ fn main() {
                 println!("{}", peer.to_string());
             }
         }
-        // Usage: your_bittorrent.sh handshake "<torrent_file_path>" "<peer_ip>:<peer_port>"
-        "handshake" => {
-            let file_path = &args[2];
-            let peer = &args[3];
+        Command::Handshake { file_path, peer } => {
             let contents = fs::read(file_path).unwrap();
             let torrent_file = parse_torrent_file(&contents[..]).unwrap();
 
@@ -73,6 +85,5 @@ fn main() {
 
             println!("Peer ID: {}", hex::encode(&buf[buf.len() - 20..]));
         }
-        _ => println!("unknown command: {}", args[1]),
     }
 }
