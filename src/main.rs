@@ -1,11 +1,13 @@
 use anyhow::{Context, Ok, Result};
 use bittorrent_starter_rust::{
-    decoder::decode_bencoded_value, handshake::prepare_handshake_message,
-    torrent_file::parse_torrent_file, tracker::track,
+    decoder::decode_bencoded_value,
+    handshake::{get_handshake_response, prepare_handshake_message},
+    torrent_file::parse_torrent_file,
+    tracker::track,
 };
 use clap::{Parser, Subcommand};
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 
@@ -74,11 +76,8 @@ fn main() -> Result<()> {
             stream
                 .write(&message)
                 .context("fail to send handshake message")?;
-            // read handshake response
-            let mut response = [0; 1 + 19 + 8 + 20 + 20];
-            stream
-                .read(&mut response)
-                .context("fail to read handshake response")?;
+            let response =
+                get_handshake_response(&mut stream).context("fail to get handshake response")?;
             println!("Peer ID: {}", hex::encode(&response[response.len() - 20..]));
         }
     }
