@@ -1,8 +1,8 @@
 use anyhow::{Context, Ok, Result};
 use bittorrent_starter_rust::{
-    decoder::decode_bencoded_value, torrent_file::parse_torrent_file, tracker::track,
+    decoder::decode_bencoded_value, handshake::prepare_handshake_message,
+    torrent_file::parse_torrent_file, tracker::track,
 };
-use bytes::{BufMut, BytesMut};
 use clap::{Parser, Subcommand};
 use std::fs;
 use std::io::{Read, Write};
@@ -69,13 +69,8 @@ fn main() -> Result<()> {
             let contents = fs::read(file_path).context("fail to open file")?;
             let torrent_file = parse_torrent_file(&contents[..]).context("fail to parse file")?;
             let mut stream = TcpStream::connect(peer).context("fail to connect to peer")?;
-            // prepare handshake message
-            let mut message = BytesMut::with_capacity(1 + 19 + 8 + 20 + 20);
-            message.put_u8(19 as u8); // protocol length, 1 byte
-            message.put_slice(b"BitTorrent protocol"); // protocol, 19 bytes
-            message.put_bytes(0, 8); // reserved bytes, 8 bytes
-            message.put_slice(&torrent_file.info.hash_info().context("fail to hash info")?); // info hash, 20 bytes
-            message.put_slice(b"00112233445566778899"); // peer id, 20 bytes
+            let message = prepare_handshake_message(&torrent_file)
+                .context("fail to prepare handshake message")?;
             stream
                 .write(&message)
                 .context("fail to send handshake message")?;
