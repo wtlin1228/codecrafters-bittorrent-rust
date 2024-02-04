@@ -4,31 +4,32 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::u32;
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
+#[repr(u8)]
 pub enum PeerMessageType {
-    Choke,
-    Unchoke,
-    Interested,
-    NotInterested,
-    Have,
-    Bitfield,
-    Request,
-    Piece,
-    Cancel,
+    Choke = 0,
+    Unchoke = 1,
+    Interested = 2,
+    NotInterested = 3,
+    Have = 4,
+    Bitfield = 5,
+    Request = 6,
+    Piece = 7,
+    Cancel = 8,
 }
 
 impl PeerMessageType {
-    fn get_message_id(&self) -> u8 {
+    fn has_payload(&self) -> bool {
         match self {
-            PeerMessageType::Choke => 0,
-            PeerMessageType::Unchoke => 1,
-            PeerMessageType::Interested => 2,
-            PeerMessageType::NotInterested => 3,
-            PeerMessageType::Have => 4,
-            PeerMessageType::Bitfield => 5,
-            PeerMessageType::Request => 6,
-            PeerMessageType::Piece => 7,
-            PeerMessageType::Cancel => 8,
+            PeerMessageType::Choke => false,
+            PeerMessageType::Unchoke => false,
+            PeerMessageType::Interested => false,
+            PeerMessageType::NotInterested => false,
+            PeerMessageType::Have => true,
+            PeerMessageType::Bitfield => true,
+            PeerMessageType::Request => true,
+            PeerMessageType::Piece => true,
+            PeerMessageType::Cancel => true,
         }
     }
 }
@@ -36,24 +37,22 @@ impl PeerMessageType {
 #[derive(Debug)]
 pub struct PeerMessage {
     pub message_length_prefix: u32,
-    pub message_id: u8,
+    pub message_id: PeerMessageType,
     pub payload: Bytes,
 }
 
-impl PeerMessage {
-    pub fn get_message_type(&self) -> PeerMessageType {
-        match self.message_id {
-            0 => PeerMessageType::Choke,
-            1 => PeerMessageType::Unchoke,
-            2 => PeerMessageType::Interested,
-            3 => PeerMessageType::NotInterested,
-            4 => PeerMessageType::Have,
-            5 => PeerMessageType::Bitfield,
-            6 => PeerMessageType::Request,
-            7 => PeerMessageType::Piece,
-            8 => PeerMessageType::Cancel,
-            _ => unreachable!(),
-        }
+pub fn get_message_type(message_id: u8) -> PeerMessageType {
+    match message_id {
+        0 => PeerMessageType::Choke,
+        1 => PeerMessageType::Unchoke,
+        2 => PeerMessageType::Interested,
+        3 => PeerMessageType::NotInterested,
+        4 => PeerMessageType::Have,
+        5 => PeerMessageType::Bitfield,
+        6 => PeerMessageType::Request,
+        7 => PeerMessageType::Piece,
+        8 => PeerMessageType::Cancel,
+        _ => unreachable!(),
     }
 }
 
@@ -69,8 +68,17 @@ pub fn get_peer_message(stream: &mut TcpStream) -> Result<PeerMessage> {
     stream
         .read_exact(&mut message_id)
         .context("read message id")?;
-    let message_id: u8 = message_id[0];
-    println!("  message_id = {}", message_id);
+    let message_id = get_message_type(message_id[0]);
+    println!("  message_id = {:?}", message_id);
+
+    if !message_id.has_payload() {
+        return Ok(PeerMessage {
+            message_length_prefix,
+            message_id,
+            payload: Bytes::new(),
+        });
+    }
+
     let mut payload = BytesMut::with_capacity(message_length_prefix as usize - 1);
     stream.read_exact(&mut payload).context("read payload")?;
     println!("  payload = {:?}", payload);
@@ -89,9 +97,9 @@ pub fn send_peer_message(
     println!("Sending peer message");
     let mut message = BytesMut::with_capacity(5 + payload.len());
     println!("  message_length_prefix = {}", 1 + payload.len());
-    message.put_u32(payload.len() as u32);
-    println!("  message_id = {}", message_type.get_message_id());
-    message.put_u8(message_type.get_message_id());
+    message.put_u32(1 + payload.len() as u32);
+    println!("  message_id = {:?}", message_type);
+    message.put_u8(message_type as u8);
     println!("  payload = {:?}", payload);
     message.put(payload);
     let message = message.freeze();

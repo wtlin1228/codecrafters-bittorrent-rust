@@ -6,7 +6,7 @@ use bittorrent_starter_rust::{
     torrent_file::parse_torrent_file,
     tracker::track,
 };
-use bytes::Bytes;
+use bytes::{BufMut, Bytes, BytesMut};
 use clap::{Parser, Subcommand};
 use std::fs;
 use std::io::Write;
@@ -38,7 +38,7 @@ enum Command {
         #[arg(short)]
         output_file_path: PathBuf,
         file_path: PathBuf,
-        piece_index: usize,
+        piece_index: u32,
     },
 }
 
@@ -103,19 +103,42 @@ fn main() -> Result<()> {
                 get_handshake_response(&mut stream).context("get handshake response")?;
 
             // Wait for a bitfield message from the peer
-            let bitfield = get_peer_message(&mut stream).context("get bitfield message")?;
-            println!("{:?}", bitfield);
+            let peer_message = get_peer_message(&mut stream).context("get bitfield message")?;
+            println!("{:?}", peer_message);
+            assert_eq!(peer_message.message_id, PeerMessageType::Bitfield);
 
             // Send an interested message
             send_peer_message(&mut stream, PeerMessageType::Interested, Bytes::new())
                 .context("send interested message")?;
 
             // Wait until you receive an unchoke message back
-            let mut response_message = get_peer_message(&mut stream).context("get message")?;
-            println!("{:?}", response_message);
-            while response_message.get_message_type() != PeerMessageType::Unchoke {
-                response_message = get_peer_message(&mut stream).context("get message")?;
+            loop {
+                let peer_message = get_peer_message(&mut stream).context("get unchoke message")?;
+                println!("{:?}", peer_message);
+                if peer_message.message_id == PeerMessageType::Unchoke {
+                    break;
+                }
             }
+
+            // Break the piece into blocks of 16 kiB (16 * 1024 bytes) and send a request message
+            // for each block
+            let mut payload = BytesMut::with_capacity(4 + 4 + 4);
+            payload.put_u32(piece_index); // index
+            payload.put_u32(0); // begin
+            payload.put_u32(16 * 1024); // length
+            send_peer_message(&mut stream, PeerMessageType::Request, payload.freeze())
+                .context("send request message")?;
+
+            // Wait for a piece message for each block you've requested
+            let peer_message = get_peer_message(&mut stream).context("get piece message")?;
+            println!("{:?}", peer_message);
+            assert_eq!(peer_message.message_id, PeerMessageType::Piece);
+            println!("{:?}", peer_message);
+
+            // the output it expects:
+            // Piece 0 downloaded to /tmp/test-piece-0.
+            fs::write(output_file_path, peer_message.payload)
+                .context("write downloaded piece to output file")?;
         }
     }
     Ok(())
