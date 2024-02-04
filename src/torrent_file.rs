@@ -23,28 +23,25 @@ pub struct TorrentFileInfo<'input> {
 impl<'input> TorrentFileInfo<'input> {
     pub fn hash_info(&self) -> Result<[u8; 20]> {
         let bencoded_info_dictionary =
-            serde_bencode::to_bytes(&self).context("fail to hash info dictionary")?;
+            serde_bencode::to_bytes(&self).context("hash info dictionary")?;
         let mut hasher = Sha1::new();
         hasher.update(bencoded_info_dictionary);
         Ok(hasher.finalize().into())
     }
 
     pub fn hex_info(&self) -> Result<String> {
-        Ok(hex::encode(
-            self.hash_info().context("fail to get hash info")?,
-        ))
+        Ok(hex::encode(self.hash_info().context("get hash info")?))
     }
 
     pub fn url_encoded_hash_info(&self) -> Result<String> {
-        Ok(self
-            .hash_info()
-            .context("fail to get hash info")?
-            .iter()
-            .fold("".to_string(), |mut acc, &byte| {
+        Ok(self.hash_info().context("get hash info")?.iter().fold(
+            "".to_string(),
+            |mut acc, &byte| {
                 acc.push_str("%");
                 acc.push_str(&hex::encode([byte]));
                 acc
-            }))
+            },
+        ))
     }
 
     pub fn hex_pieces(&self) -> Result<Vec<String>> {
@@ -57,7 +54,7 @@ impl<'input> TorrentFileInfo<'input> {
 }
 
 pub fn parse_torrent_file(contents: &[u8]) -> Result<TorrentFile> {
-    let decoded_value = decode(contents).context("fail to decode file contents")?.1;
+    let decoded_value = decode(contents).context("decode file contents")?.1;
 
     let mut announce: Option<&str> = None;
     let mut length: Option<u64> = None;
@@ -89,12 +86,12 @@ pub fn parse_torrent_file(contents: &[u8]) -> Result<TorrentFile> {
     }
 
     Ok(TorrentFile {
-        announce: announce.context("fail to get announce from torrent file")?,
+        announce: announce.context("get announce from torrent file")?,
         info: TorrentFileInfo {
-            length: length.context("fail to get info.length from torrent file")?,
-            name: name.context("fail to get info.name from torrent file")?,
-            piece_length: piece_length.context("fail to get info.piece_length")?,
-            pieces: pieces.context("fail to get info.pieces")?,
+            length: length.context("get info.length from torrent file")?,
+            name: name.context("get info.name from torrent file")?,
+            piece_length: piece_length.context("get info.piece_length")?,
+            pieces: pieces.context("get info.pieces")?,
         },
     })
 }

@@ -26,12 +26,12 @@ impl Peer {
     }
 }
 
-pub fn track(torrent_file: TorrentFile) -> Result<TrackerResponse> {
-    let url = get_request_url(&torrent_file).context("fail to get url")?;
+pub fn track(torrent_file: &TorrentFile) -> Result<TrackerResponse> {
+    let url = get_request_url(&torrent_file).context("get url")?;
     let response_in_bytes = &reqwest::blocking::get(url)
-        .context("fail to request the url")?
+        .context("request the url")?
         .bytes()
-        .context("fail to read request as bytes")?[..];
+        .context("read request as bytes")?[..];
     parse_response(response_in_bytes)
 }
 
@@ -41,7 +41,7 @@ pub fn get_request_url(torrent_file: &TorrentFile) -> Result<String> {
     let url_encoded_info_hash: String = torrent_file
         .info
         .url_encoded_hash_info()
-        .context("fail to get url encoded hash info")?;
+        .context("get url encoded hash info")?;
     url.push_str(&format!("?info_hash={}", url_encoded_info_hash));
     url.push_str("&peer_id=00112233445566778899");
     url.push_str("&port=6881");
@@ -54,7 +54,7 @@ pub fn get_request_url(torrent_file: &TorrentFile) -> Result<String> {
 
 // TODO: Make it private while still being available for testing
 pub fn parse_response(response: &[u8]) -> Result<TrackerResponse> {
-    let decoded_value = decode(response).context("fail to decode response")?.1;
+    let decoded_value = decode(response).context("decode response")?.1;
 
     let mut complete: Option<i64> = None;
     let mut min_interval: Option<i64> = None;
@@ -94,10 +94,10 @@ pub fn parse_response(response: &[u8]) -> Result<TrackerResponse> {
     }
 
     Ok(TrackerResponse {
-        complete: complete.context("fail to get complete")?,
-        min_interval: min_interval.context("fail to get min interval")?,
-        incomplete: incomplete.context("fail to get incomplete")?,
-        interval: interval.context("fail to get interval")?,
-        peers: peers.context("fail to get peers")?,
+        complete: complete.context("get complete")?,
+        min_interval: min_interval.context("get min interval")?,
+        incomplete: incomplete.context("get incomplete")?,
+        interval: interval.context("get interval")?,
+        peers: peers.context("get peers")?,
     })
 }
