@@ -1,26 +1,31 @@
-use crate::torrent_file::TorrentFile;
-use anyhow::{Context, Ok, Result};
-use bytes::{BufMut, Bytes, BytesMut};
-use std::io::Read;
-use std::net::TcpStream;
-
-const HANDSHAKE_MESSAGE_SIZE: usize = 1 + 19 + 8 + 20 + 20;
-
-pub fn prepare_handshake_message(torrent_file: &TorrentFile) -> Result<Bytes> {
-    let mut message = BytesMut::with_capacity(HANDSHAKE_MESSAGE_SIZE);
-    message.put_u8(19 as u8); // protocol length, 1 byte
-    message.put_slice(b"BitTorrent protocol"); // protocol, 19 bytes
-    message.put_bytes(0, 8); // reserved bytes, 8 bytes
-    message.put_slice(&torrent_file.info.hash_info().context("hash info")?); // info hash, 20 bytes
-    message.put_slice(b"00112233445566778899"); // peer id, 20 bytes
-    let message = message.freeze();
-    Ok(message)
+#[repr(C)]
+#[repr(packed)]
+pub struct Handshake {
+    pub protocol_length: u8,
+    pub protocol: [u8; 19],
+    pub reserved_bytes: [u8; 8],
+    pub info_hash: [u8; 20],
+    pub peer_id: [u8; 20],
 }
 
-pub fn get_handshake_response(stream: &mut TcpStream) -> Result<[u8; HANDSHAKE_MESSAGE_SIZE]> {
-    let mut response = [0; HANDSHAKE_MESSAGE_SIZE];
-    stream
-        .read(&mut response)
-        .context("read handshake response")?;
-    Ok(response)
+// It's guaranteed to be 68 bytes with repr(C) and repr(packed)
+const HANDSHAKE_SIZE: usize = std::mem::size_of::<Handshake>();
+
+impl Handshake {
+    pub fn new(info_hash: [u8; 20]) -> Self {
+        Self {
+            protocol_length: 19,
+            protocol: *b"BitTorrent protocol",
+            reserved_bytes: [0; 8],
+            info_hash,
+            peer_id: *b"00112233445566778899",
+        }
+    }
+
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        let bytes = self as *mut Self as *mut [u8; HANDSHAKE_SIZE];
+        // Safety: Self is a POD with repr(c) and repr(packed)
+        let bytes: &mut [u8; HANDSHAKE_SIZE] = unsafe { &mut *bytes };
+        bytes
+    }
 }

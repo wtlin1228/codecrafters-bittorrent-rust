@@ -1,15 +1,11 @@
 use anyhow::{Context, Ok, Result};
-use bittorrent_starter_rust::{
-    decoder::decode_bencoded_value,
-    handshake::{get_handshake_response, prepare_handshake_message},
-    peer_message::{get_peer_message, send_peer_message, PeerMessageType},
-    torrent_file::parse_torrent_file,
-    tracker::track,
-};
-use bytes::{BufMut, Bytes, BytesMut};
+use bittorrent_starter_rust::decoder::decode_bencoded_value;
+use bittorrent_starter_rust::handshake::Handshake;
+use bittorrent_starter_rust::torrent_file::parse_torrent_file;
+use bittorrent_starter_rust::tracker::track;
 use clap::{Parser, Subcommand};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 
@@ -38,7 +34,7 @@ enum Command {
         #[arg(short)]
         output_file_path: PathBuf,
         file_path: PathBuf,
-        piece_index: u32,
+        piece_index: i32,
     },
 }
 
@@ -75,70 +71,36 @@ fn main() -> Result<()> {
         Command::Handshake { file_path, peer } => {
             let contents = fs::read(file_path).context("open file")?;
             let torrent_file = parse_torrent_file(&contents[..]).context("parse file")?;
+            let info_hash = torrent_file.info.hash_info().context("hash info")?;
             let mut stream = TcpStream::connect(peer).context("connect to peer")?;
-            let message =
-                prepare_handshake_message(&torrent_file).context("prepare handshake message")?;
-            stream.write(&message).context("send handshake message")?;
-            let response = get_handshake_response(&mut stream).context("get handshake response")?;
-            println!("Peer ID: {}", hex::encode(&response[response.len() - 20..]));
+            let mut handshake = Handshake::new(info_hash);
+            let handshake_bytes = handshake.as_bytes_mut();
+            stream
+                .write(handshake_bytes)
+                .context("send handshake request")?;
+            stream
+                .read_exact(handshake_bytes)
+                .context("read handshake response")?;
+            assert_eq!(handshake.protocol_length, 19);
+            assert_eq!(&handshake.protocol, b"BitTorrent protocol");
+            assert_eq!(handshake.info_hash, info_hash);
+            println!("Peer ID: {}", hex::encode(&handshake.peer_id));
         }
         Command::DownloadPiece {
-            output_file_path,
+            output_file_path: _output_file_path,
             file_path,
-            piece_index,
+            piece_index: _piece_index,
         } => {
             let contents = fs::read(file_path).context("open file")?;
             let torrent_file = parse_torrent_file(&contents[..]).context("parse file")?;
             let track_result = track(&torrent_file).context("track peers")?;
-            let first_peer = track_result
+            let _first_peer = track_result
                 .peers
                 .first()
                 .context("get the first peer")?
                 .to_string();
-            let mut stream = TcpStream::connect(first_peer).context("connect to peer")?;
-            let message =
-                prepare_handshake_message(&torrent_file).context("prepare handshake message")?;
-            stream.write(&message).context("send handshake message")?;
-            let _handshake_response =
-                get_handshake_response(&mut stream).context("get handshake response")?;
 
-            // Wait for a bitfield message from the peer
-            let peer_message = get_peer_message(&mut stream).context("get bitfield message")?;
-            println!("{:?}", peer_message);
-            assert_eq!(peer_message.message_id, PeerMessageType::Bitfield);
-
-            // Send an interested message
-            send_peer_message(&mut stream, PeerMessageType::Interested, Bytes::new())
-                .context("send interested message")?;
-
-            // Wait until you receive an unchoke message back
-            loop {
-                let peer_message = get_peer_message(&mut stream).context("get unchoke message")?;
-                println!("{:?}", peer_message);
-                if peer_message.message_id == PeerMessageType::Unchoke {
-                    break;
-                }
-            }
-
-            // Break the piece into blocks of 16 kiB (16 * 1024 bytes) and send a request message
-            // for each block
-            let mut payload = BytesMut::with_capacity(4 + 4 + 4);
-            payload.put_u32(piece_index); // index
-            payload.put_u32(0); // begin
-            payload.put_u32(16 * 1024); // length
-            send_peer_message(&mut stream, PeerMessageType::Request, payload.freeze())
-                .context("send request message")?;
-
-            // Wait for a piece message for each block you've requested
-            let peer_message = get_peer_message(&mut stream).context("get piece message")?;
-            println!("{:?}", peer_message);
-            assert_eq!(peer_message.message_id, PeerMessageType::Piece);
-            println!("{:?}", peer_message);
-
-            // the output it expects:
-            // Piece 0 downloaded to /tmp/test-piece-0.
-            fs::write(output_file_path, peer_message.payload)
-                .context("write downloaded piece to output file")?;
+            todo!("Rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr")
         }
     }
     Ok(())

@@ -1,5 +1,5 @@
 pub mod decoder;
 pub mod handshake;
-pub mod peer_message;
+pub mod peer;
 pub mod torrent_file;
 pub mod tracker;
