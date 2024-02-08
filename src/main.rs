@@ -1,6 +1,7 @@
 use anyhow::{Context, Ok, Result};
 use bittorrent_starter_rust::decoder::decode_bencoded_value;
 use bittorrent_starter_rust::handshake::Handshake;
+use bittorrent_starter_rust::peer::{Message, MessageTag, Peer};
 use bittorrent_starter_rust::torrent_file::parse_torrent_file;
 use bittorrent_starter_rust::tracker::track;
 use clap::{Parser, Subcommand};
@@ -34,7 +35,7 @@ enum Command {
         #[arg(short)]
         output_file_path: PathBuf,
         file_path: PathBuf,
-        piece_index: i32,
+        piece_index: u32,
     },
 }
 
@@ -87,20 +88,40 @@ fn main() -> Result<()> {
             println!("Peer ID: {}", hex::encode(&handshake.peer_id));
         }
         Command::DownloadPiece {
-            output_file_path: _output_file_path,
+            output_file_path,
             file_path,
-            piece_index: _piece_index,
+            piece_index,
         } => {
+            // Read the torrent file to get the tracker URL
             let contents = fs::read(file_path).context("open file")?;
             let torrent_file = parse_torrent_file(&contents[..]).context("parse file")?;
-            let track_result = track(&torrent_file).context("track peers")?;
-            let _first_peer = track_result
-                .peers
-                .first()
-                .context("get the first peer")?
-                .to_string();
+            let mut peer = Peer::new(&torrent_file).context("create peer")?;
 
-            todo!("Rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr")
+            // Exchange multiple peer messages to download the file
+            peer.wait_message(MessageTag::Bitfield)
+                .context("wait bitfield message")?;
+            let interested_message = Message {
+                tag: MessageTag::Interested,
+                payload: Vec::new(),
+            };
+            peer.send_message(interested_message)
+                .context("send interested message")?;
+            peer.wait_message(MessageTag::Unchoke)
+                .context("wait unchoke message")?;
+            let piece = peer
+                .download_a_piece(piece_index)
+                .context("download a piece")?;
+
+            // Write downloaded piece to output file
+            fs::write(&output_file_path, piece).with_context(|| {
+                format!("write the downloaded piece to file {:?}", output_file_path)
+            })?;
+
+            println!(
+                "Piece {} downloaded to {}.",
+                piece_index,
+                output_file_path.display()
+            );
         }
     }
     Ok(())
