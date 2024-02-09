@@ -11,16 +11,16 @@ pub struct TrackerResponse {
     pub min_interval: i64,
     pub incomplete: i64,
     pub interval: i64,
-    pub peers: Vec<Peer>,
+    pub peer_addr_list: Vec<PeerAddr>,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Peer {
+pub struct PeerAddr {
     pub ip: Ipv4Addr,
     pub port: u16,
 }
 
-impl Peer {
+impl PeerAddr {
     pub fn to_string(&self) -> String {
         format!("{}:{}", self.ip, self.port)
     }
@@ -60,7 +60,7 @@ pub fn parse_response(response: &[u8]) -> Result<TrackerResponse> {
     let mut min_interval: Option<i64> = None;
     let mut incomplete: Option<i64> = None;
     let mut interval: Option<i64> = None;
-    let mut peers: Option<Vec<Peer>> = None;
+    let mut peers: Option<Vec<PeerAddr>> = None;
 
     if let Decoded::Dictionary(dict) = decoded_value {
         if let Decoded::Integer(n) = dict.get("complete").context("should contain complete")? {
@@ -82,9 +82,9 @@ pub fn parse_response(response: &[u8]) -> Result<TrackerResponse> {
             interval = Some(n.to_owned());
         };
         if let Decoded::String(info) = dict.get("peers").context("should contain peers")? {
-            let mut vec: Vec<Peer> = vec![];
+            let mut vec: Vec<PeerAddr> = vec![];
             for chunk in info.chunks(6) {
-                vec.push(Peer {
+                vec.push(PeerAddr {
                     ip: Ipv4Addr::new(chunk[0], chunk[1], chunk[2], chunk[3]),
                     port: ((chunk[4] as u16) << 8) | chunk[5] as u16,
                 })
@@ -98,6 +98,6 @@ pub fn parse_response(response: &[u8]) -> Result<TrackerResponse> {
         min_interval: min_interval.context("get min interval")?,
         incomplete: incomplete.context("get incomplete")?,
         interval: interval.context("get interval")?,
-        peers: peers.context("get peers")?,
+        peer_addr_list: peers.context("get peers")?,
     })
 }

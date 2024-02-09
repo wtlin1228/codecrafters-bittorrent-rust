@@ -1,7 +1,8 @@
 use anyhow::{Context, Ok, Result};
 use bittorrent_starter_rust::decoder::decode_bencoded_value;
+use bittorrent_starter_rust::download::Download;
 use bittorrent_starter_rust::handshake::Handshake;
-use bittorrent_starter_rust::peer::{Message, MessageTag, Peer};
+use bittorrent_starter_rust::peer::Peer;
 use bittorrent_starter_rust::torrent_file::parse_torrent_file;
 use bittorrent_starter_rust::tracker::track;
 use clap::{Parser, Subcommand};
@@ -37,6 +38,11 @@ enum Command {
         file_path: PathBuf,
         piece_index: u32,
     },
+    Download {
+        #[arg(short)]
+        output_file_path: PathBuf,
+        file_path: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -65,8 +71,8 @@ fn main() -> Result<()> {
             let contents = fs::read(file_path).context("open file")?;
             let torrent_file = parse_torrent_file(&contents[..]).context("parse file")?;
             let track_result = track(&torrent_file).context("track peers")?;
-            for peer in track_result.peers {
-                println!("{}", peer.to_string());
+            for peer_addr in track_result.peer_addr_list {
+                println!("{}", peer_addr.to_string());
             }
         }
         Command::Handshake { file_path, peer } => {
@@ -95,19 +101,17 @@ fn main() -> Result<()> {
             // Read the torrent file to get the tracker URL
             let contents = fs::read(file_path).context("open file")?;
             let torrent_file = parse_torrent_file(&contents[..]).context("parse file")?;
-            let mut peer = Peer::new(&torrent_file).context("create peer")?;
 
-            // Exchange multiple peer messages to download the file
-            peer.wait_message(MessageTag::Bitfield)
-                .context("wait bitfield message")?;
-            let interested_message = Message {
-                tag: MessageTag::Interested,
-                payload: Vec::new(),
-            };
-            peer.send_message(interested_message)
-                .context("send interested message")?;
-            peer.wait_message(MessageTag::Unchoke)
-                .context("wait unchoke message")?;
+            // Perform the tracker GET request to get a list of peers
+            let track_result = track(&torrent_file).context("track peers")?;
+            let first_peer_addr = track_result
+                .peer_addr_list
+                .first()
+                .context("get first peer")?
+                .to_string();
+
+            // Download the piece from the first peer
+            let mut peer = Peer::new(first_peer_addr, torrent_file).context("create peer")?;
             let piece = peer
                 .download_a_piece(piece_index)
                 .context("download a piece")?;
@@ -122,6 +126,13 @@ fn main() -> Result<()> {
                 piece_index,
                 output_file_path.display()
             );
+        }
+        Command::Download {
+            output_file_path,
+            file_path,
+        } => {
+            Download::download_file(&file_path, &output_file_path)
+                .with_context(|| format!("download {:?} to {:?}", file_path, output_file_path))?;
         }
     }
     Ok(())

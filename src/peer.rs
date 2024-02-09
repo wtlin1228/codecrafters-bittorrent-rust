@@ -1,6 +1,5 @@
 use crate::handshake::Handshake;
 use crate::torrent_file::TorrentFile;
-use crate::tracker::track;
 use anyhow::{Context, Ok, Result};
 use bytes::{BufMut, BytesMut};
 use std::io::{Read, Write};
@@ -122,25 +121,17 @@ impl Piece {
     }
 }
 
-pub struct Peer<'a> {
-    torrent_file: &'a TorrentFile<'a>,
+pub struct Peer {
+    torrent_file: TorrentFile,
     stream: TcpStream,
 }
 
-impl<'a> Peer<'a> {
-    pub fn new(torrent_file: &'a TorrentFile) -> Result<Self> {
+impl Peer {
+    pub fn new(peer_addr: String, torrent_file: TorrentFile) -> Result<Self> {
         let info_hash = torrent_file.info.hash_info().context("hash info")?;
 
-        // Perform the tracker GET request to get a list of peers
-        let track_result = track(&torrent_file).context("track peers")?;
-        let first_peer = track_result
-            .peers
-            .first()
-            .context("get the first peer")?
-            .to_string();
-
         // Establish a TCP connection with a peer, and perform a handshake
-        let mut stream = TcpStream::connect(first_peer).context("connect to peer")?;
+        let mut stream = TcpStream::connect(peer_addr).context("connect to peer")?;
         let mut handshake = Handshake::new(info_hash);
         let handshake_bytes = handshake.as_bytes_mut();
         stream
@@ -160,6 +151,18 @@ impl<'a> Peer<'a> {
     }
 
     pub fn download_a_piece(&mut self, piece_index: u32) -> Result<Vec<u8>> {
+        // Exchange multiple peer messages to download the file
+        self.wait_message(MessageTag::Bitfield)
+            .context("wait bitfield message")?;
+        let interested_message = Message {
+            tag: MessageTag::Interested,
+            payload: Vec::new(),
+        };
+        self.send_message(interested_message)
+            .context("send interested message")?;
+        self.wait_message(MessageTag::Unchoke)
+            .context("wait unchoke message")?;
+
         let mut piece_length = self.torrent_file.info.piece_length as u32;
         // Last piece might be smaller than other piece
         if (piece_index + 1) as u64 * piece_length as u64 > self.torrent_file.info.length {
